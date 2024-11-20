@@ -76,13 +76,13 @@ char* encode_instruction(const Instruction *inst) {
     }
     // slli, srli, srai
     if (strcasecmp(inst->mnemonic, "SLLI") == 0) {
-        binary_inst = (0b0010011) | (inst->rs1 << 15) | (inst->imm << 20) | (inst->rd << 7) | (0b000000 << 25) | (0b001 <<12);
+        binary_inst = (0b0010011) | (inst->rs1 << 15) | (inst->imm << 20) | (inst->rd << 7) | (0b000000 << 26) | (0b001 <<12);
     }
     if (strcasecmp(inst->mnemonic, "SRLI") == 0) {
-        binary_inst = (0b0010011) | (inst->rs1 << 15) | (inst->imm << 20) | (inst->rd << 7) | (0b000000 << 25) | (0b101 <<12);
+        binary_inst = (0b0010011) | (inst->rs1 << 15) | (inst->imm << 20) | (inst->rd << 7) | (0b000000 << 26) | (0b101 <<12);
     }
     if (strcasecmp(inst->mnemonic, "SRAI") == 0) {
-        binary_inst = (0b0010011) | (inst->rs1 << 15) | (inst->imm << 20) | (inst->rd << 7) | (0b010000 << 25) | (0b101 <<12);
+        binary_inst = (0b0010011) | (inst->rs1 << 15) | (inst->imm << 20) | (inst->rd << 7) | (0b010000 << 26) | (0b101 <<12);
     }
     //lw
     if (strcasecmp(inst->mnemonic, "LW") == 0) {
@@ -95,7 +95,7 @@ char* encode_instruction(const Instruction *inst) {
 
     //S-type
     if (strcasecmp(inst->mnemonic, "SW") == 0) {
-        binary_inst = (0b0100011) | (inst->rs1 << 15) | (inst->rs1 << 15) | (inst->rs2 << 20) | ((inst->imm&0b11111)<<7) | ((inst->imm>>5)<<25) |(0b010 <<12);
+        binary_inst = (0b0100011) | (inst->rs1 << 15) | (inst->rs2 << 20) | ((inst->imm&0b11111)<<7) | ((inst->imm>>5)<<25) |(0b010<<12);
     }
 
     //SB-type
@@ -112,7 +112,6 @@ char* encode_instruction(const Instruction *inst) {
         binary_inst = (0b1100011) | (inst->rs1 << 15) | (inst->rs2 << 20) | (inst->rd << 7) | (((inst->imm>>10)&1)<<25) | ((inst->imm&0b1111)<<8) | (((inst->imm>>4)&0b11111)<<25) | (((inst->imm>>11)&1)<<31) | (0b101 <<12);
     }
 
-
     //UJ-type
     if (strcasecmp(inst->mnemonic, "JAL") == 0) {
         binary_inst = (0b1101111) | (inst->rd << 7) | (((inst->imm>>11)&0b11111111)<<12) | (((inst->imm>>10)&1)<<20) | ((inst->imm&0b1111111111)<<21) | (((inst->imm>>19)&1)<<31);
@@ -123,8 +122,9 @@ char* encode_instruction(const Instruction *inst) {
         binary_inst = 0xFFFFFFFF; // 종료 명령
     }
 
+    free(inst);
     char *buffer = malloc(33);
-    if(!binary_inst){
+    if(binary_inst){
         for (int i = 31; i >= 0; i--) {
             buffer[31 - i] = (binary_inst & (1 << i)) ? '1' : '0';
         }
@@ -149,14 +149,15 @@ void process_instruction(char *line, FILE *o_file, FILE *trace_file, int *pc, in
         char* machine_code = encode_instruction(createInst(mnemonic, rd, rs1, 0, imm));
         fprintf(o_file, "%s\n", machine_code);
     } else if (sscanf(line, "%s x%d, %d(x%d)", mnemonic, &rd, &imm, &rs1) == 4) {
-        // I-type ; lw & jalr
         toUpperCase(mnemonic);
-        char* machine_code = encode_instruction(createInst(mnemonic, rd, rs1, 0, imm));
-        fprintf(o_file, "%s\n", machine_code);
-    } else if (sscanf(line, "%s x%d, %d(x%d)", mnemonic, &rs2, &imm, &rs1) == 4) {
+        char* machine_code=NULL;
+        if(strcasecmp(mnemonic, "SW") == 0){
         // S-type
-        toUpperCase(mnemonic);
-        char* machine_code = encode_instruction(createInst(mnemonic, 0, rs1, rs2, imm));
+        machine_code = encode_instruction(createInst(mnemonic, 0, rs1, rd, imm)); // rs2자리에 rd값을 넣어준다.
+        } else {
+        // I-type ; lw & jalr
+        machine_code = encode_instruction(createInst(mnemonic, rd, rs1, 0, imm));
+        }
         fprintf(o_file, "%s\n", machine_code);
     } else if (sscanf(line, "%s x%d, x%d, %d", mnemonic, &rs1, &rs2, &imm) == 4) {
         // SB-type
@@ -178,42 +179,6 @@ void process_instruction(char *line, FILE *o_file, FILE *trace_file, int *pc, in
 
     fprintf(trace_file, "%d\n", *pc);
     *pc += 4;
-}
-
-// 명령어 파싱
-int parse_instruction(const char *line, Instruction *inst) {
-    char temp[MAX_LINE];
-    strcpy(temp, line);
-    char *token = strtok(temp, " ,()");
-
-    if (token == NULL) return 0;
-    strcpy(inst->mnemonic, token);
-    inst->rd = inst->rs1 = inst->rs2 = inst->imm = -1;
-
-    if (strcasecmp(token, "EXIT") == 0) return 1;
-
-    token = strtok(NULL, " ,()");
-    if (token) inst->rd = atoi(token + 1);
-    token = strtok(NULL, " ,()");
-    if (token) inst->rs1 = atoi(token + 1);
-    token = strtok(NULL, " ,()");
-    if (token && strchr(token, 'x')) inst->rs2 = atoi(token + 1);
-    else if (token) inst->imm = atoi(token);
-
-    return 1;
-}
-
-// 프로그램 실행 및 PC 추적
-void execute_program(FILE *o_file, FILE *trace_file, Instruction *instructions, int count) {
-    int pc = START_PC;
-    for (int i = 0; i < count; i++) {
-        fprintf(trace_file, "%d\\n", pc);
-        unsigned int machine_code = encode_instruction(&instructions[i]);
-        fprintf(o_file, "%08x\\n", machine_code);
-
-        if (strcasecmp(instructions[i].mnemonic, "EXIT") == 0) break;
-        pc += 4; // 다음 명령어
-    }
 }
 
 int main() {
@@ -260,3 +225,41 @@ int main() {
     }
     return 0;
 }
+
+/*
+// 명령어 파싱
+int parse_instruction(const char *line, Instruction *inst) {
+    char temp[MAX_LINE];
+    strcpy(temp, line);
+    char *token = strtok(temp, " ,()");
+
+    if (token == NULL) return 0;
+    strcpy(inst->mnemonic, token);
+    inst->rd = inst->rs1 = inst->rs2 = inst->imm = -1;
+
+    if (strcasecmp(token, "EXIT") == 0) return 1;
+
+    token = strtok(NULL, " ,()");
+    if (token) inst->rd = atoi(token + 1);
+    token = strtok(NULL, " ,()");
+    if (token) inst->rs1 = atoi(token + 1);
+    token = strtok(NULL, " ,()");
+    if (token && strchr(token, 'x')) inst->rs2 = atoi(token + 1);
+    else if (token) inst->imm = atoi(token);
+
+    return 1;
+}
+
+// 프로그램 실행 및 PC 추적
+void execute_program(FILE *o_file, FILE *trace_file, Instruction *instructions, int count) {
+    int pc = START_PC;
+    for (int i = 0; i < count; i++) {
+        fprintf(trace_file, "%d\\n", pc);
+        unsigned int machine_code = encode_instruction(&instructions[i]);
+        fprintf(o_file, "%08x\\n", machine_code);
+
+        if (strcasecmp(instructions[i].mnemonic, "EXIT") == 0) break;
+        pc += 4; // 다음 명령어
+    }
+}
+*/
