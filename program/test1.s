@@ -17,4 +17,4 @@ ADD x22, x1, x2
 SUB x23, x2, x1
 AND x24, x22, x23
 OR x25, x22, x23
-SW x21, 8(x2) 
+SW x21, 8(x2)
